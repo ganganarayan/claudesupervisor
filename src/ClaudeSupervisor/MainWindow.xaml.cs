@@ -147,6 +147,13 @@ public partial class MainWindow : Window
             _ocrResetAt = null;
     }
 
+    private void EnterOnlyCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        // When we're only pressing Enter, the send text is irrelevant — grey it out.
+        if (SendTextBox is not null)
+            SendTextBox.IsEnabled = EnterOnlyCheck.IsChecked != true;
+    }
+
     private void Timer_Tick(object? sender, EventArgs e)
     {
         if (DateTimeOffset.Now >= _resumeAt)
@@ -191,18 +198,30 @@ public partial class MainWindow : Window
             return;
         }
 
-        string text = string.IsNullOrEmpty(SendTextBox.Text) ? "resume" : SendTextBox.Text;
+        bool enterOnly = EnterOnlyCheck.IsChecked == true;
+        string text = SendTextBox.Text ?? string.Empty;
+        bool willType = !enterOnly && text.Length > 0;
+
+        string what = willType
+            ? $"appended \"{Preview(text)}\" + Enter"
+            : "pressed Enter only";
         try
         {
-            target.SendTextAndEnter(text);
-            SetStatus($"{(auto ? "Auto-resumed" : "Sent")} at {DateTime.Now:HH:mm:ss}: typed \"{text}\" + Enter.");
-            Log($"{(auto ? "AUTO" : "MANUAL")} resume: sent \"{text}\" + Enter to {target.Title}.");
+            target.Resume(text, enterOnly);
+            SetStatus($"{(auto ? "Auto-sent" : "Sent")} at {DateTime.Now:HH:mm:ss}: {what}.");
+            Log($"{(auto ? "AUTO" : "MANUAL")} send to {target.Title}: {what}.");
         }
         catch (Exception ex)
         {
-            SetStatus("Resume failed: " + ex.Message);
-            Log("ERROR sending resume: " + ex.Message);
+            SetStatus("Send failed: " + ex.Message);
+            Log("ERROR sending: " + ex.Message);
         }
+    }
+
+    private static string Preview(string text)
+    {
+        string oneLine = text.Replace("\r", " ").Replace("\n", " ").Trim();
+        return oneLine.Length > 60 ? oneLine[..60] + "…" : oneLine;
     }
 
     // ----- Helpers -----

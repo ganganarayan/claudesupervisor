@@ -146,18 +146,43 @@ public sealed class ClaudeWindow
     }
 
     /// <summary>
-    /// Focuses the window, types <paramref name="text"/> into the focused input, then Enter.
+    /// Focuses the Claude window and submits.
+    /// <para>
+    /// If <paramref name="enterOnly"/> is true (or <paramref name="text"/> is empty), it just
+    /// presses Enter — use this when the prompt is already typed in Claude's composer.
+    /// Otherwise it moves the caret to the end of the composer, appends <paramref name="text"/>
+    /// (multi-line text uses Shift+Enter for line breaks so it isn't submitted early), then
+    /// presses Enter to send.
+    /// </para>
     /// </summary>
-    public void SendTextAndEnter(string text)
+    public void Resume(string? text, bool enterOnly)
     {
         ForceForeground();
         Thread.Sleep(400); // let focus settle on the composer
 
-        foreach (char c in text)
-            SendUnicodeChar(c);
+        bool typeText = !enterOnly && !string.IsNullOrEmpty(text);
+        if (typeText)
+        {
+            SendChord(VK_CONTROL, VK_END); // go to the end of any existing text, then append
+            Thread.Sleep(50);
+            TypeText(text!);
+            Thread.Sleep(80);
+        }
 
-        Thread.Sleep(60);
-        SendVirtualKey(VK_RETURN);
+        SendVirtualKey(VK_RETURN); // submit
+    }
+
+    private static void TypeText(string text)
+    {
+        foreach (char c in text)
+        {
+            if (c == '\r')
+                continue;
+            if (c == '\n')
+                SendChord(VK_SHIFT, VK_RETURN); // newline without submitting
+            else
+                SendUnicodeChar(c);
+        }
     }
 
     private static void SendUnicodeChar(char c)
@@ -176,6 +201,19 @@ public sealed class ClaudeWindow
         {
             KeyInput(vk, 0, 0),
             KeyInput(vk, 0, KEYEVENTF_KEYUP),
+        };
+        SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
+    }
+
+    /// <summary>Sends a modifier+key chord, e.g. Ctrl+End or Shift+Enter.</summary>
+    private static void SendChord(ushort modifier, ushort key)
+    {
+        var inputs = new[]
+        {
+            KeyInput(modifier, 0, 0),
+            KeyInput(key, 0, 0),
+            KeyInput(key, 0, KEYEVENTF_KEYUP),
+            KeyInput(modifier, 0, KEYEVENTF_KEYUP),
         };
         SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
     }

@@ -11,22 +11,34 @@ public static partial class ResetTimeParser
     /// <summary>India Standard Time — UTC+5:30, no daylight saving.</summary>
     public static readonly TimeSpan IstOffset = TimeSpan.FromMinutes(330);
 
+    // Shared clock token, e.g. "3", "3:00", "3pm", "3:00 PM".
+    private const string Clock = @"(?<h>\d{1,2})(?::(?<m>\d{2}))?\s*(?<ap>a\.?m\.?|p\.?m\.?)?";
+
     // Relative: "resets in 3 hr 55 min", "resets in 45 min", "resets in 2 hours".
     [GeneratedRegex(
         @"resets?\s+in\s+(?:(?<h>\d+)\s*(?:h|hr|hrs|hour|hours)\b)?\s*(?:(?<m>\d+)\s*(?:m|min|mins|minute|minutes)\b)?",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex RelativeRegex();
 
-    // Absolute: "resets at 3:00 PM", "Resets Mon 2:29 AM", "resets 3pm".
+    // Absolute, time AFTER the keyword: "resets at 3:00 PM", "Resets Mon 2:29 AM", "resets 3pm".
     // The (?!in) guard keeps it from matching the relative "resets in …" form.
     [GeneratedRegex(
-        @"resets?\s+(?!in\b)(?:at\s+)?(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+)?(?<h>\d{1,2})(?::(?<m>\d{2}))?\s*(?<ap>a\.?m\.?|p\.?m\.?)?",
+        @"resets?\s+(?!in\b)(?:at\s+)?(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+)?" + Clock,
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex AbsoluteRegex();
+    private static partial Regex ResetAtRegex();
+
+    // Absolute, time AFTER "until": "wait until 9:20 PM when your plan usage resets".
+    [GeneratedRegex(@"(?:until|till)\s+" + Clock,
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex UntilRegex();
+
+    // Absolute, time BEFORE "when": "9:20 PM when your plan usage resets".
+    [GeneratedRegex(Clock + @"\s+when\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex WhenRegex();
 
     // A bare time typed into the field: "3pm", "3:00 PM", "15:00".
-    [GeneratedRegex(
-        @"^\s*(?<h>\d{1,2})(?::(?<m>\d{2}))?\s*(?<ap>a\.?m\.?|p\.?m\.?)?\s*$",
+    [GeneratedRegex(@"^\s*" + Clock + @"\s*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FieldRegex();
 
@@ -53,17 +65,20 @@ public static partial class ResetTimeParser
             candidates.Add(now.AddHours(h).AddMinutes(min));
         }
 
-        foreach (Match m in AbsoluteRegex().Matches(t))
+        foreach (Regex rx in new[] { ResetAtRegex(), UntilRegex(), WhenRegex() })
         {
-            if (TryBuildAbsolute(m, out DateTimeOffset dto))
-                candidates.Add(dto);
+            foreach (Match m in rx.Matches(t))
+            {
+                if (TryBuildAbsolute(m, out DateTimeOffset dto))
+                    candidates.Add(dto);
+            }
         }
 
-        DateTimeOffset? soonest = candidates.Where(c => c > now).OrderBy(c => c).Cast<DateTimeOffset?>().FirstOrDefault();
-        if (soonest is null)
+        var future = candidates.Where(c => c > now).ToList();
+        if (future.Count == 0)
             return false;
 
-        resetAt = soonest.Value;
+        resetAt = future.Min();
         return true;
     }
 

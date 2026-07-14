@@ -17,18 +17,29 @@ runtime and no Visual Studio are required on the target machine.
 2. **Read reset time (OCR)** — click this when you've hit the limit. It captures
    the **Claude window only** (via `PrintWindow`, never a screen grab, so this
    app's own window can't leak into the capture) and runs the OCR engine built
-   into Windows 10/11 (no external data files). It understands both relative
-   durations (`resets in 3 hr 55 min` → now + 3h55m) and absolute clock times
-   (`reset at 3:00 PM`, `Resets Mon 2:29 AM`, `15:00`), and picks the soonest
-   future one. All times are handled and shown in **IST (UTC+5:30)**.
+   into Windows 10/11 (no external data files). A regex-based parser (no LLM
+   backend) understands the real Claude phrasings:
+   - relative durations — `resets in 3 hr 55 min` → now + 3h55m
+   - `reset at 3:00 PM`, `Resets Mon 2:29 AM`, `15:00`
+   - `wait until 9:20 PM when your plan usage resets` (time before "resets")
+
+   It collects every candidate on screen and picks the **soonest future** one.
+   All times are handled and shown in **IST (UTC+5:30)**.
 3. **Arm / Schedule** — schedules a resume at the reset time plus a small buffer
    (default 30 s). A live countdown shows in the status bar.
-4. **Resume** — at the scheduled moment it re-finds the Claude window, brings it
-   to the foreground, and types the send text + Enter.
+4. **Send** — at the scheduled moment it re-finds the Claude window, brings it
+   to the foreground, and submits. What it submits depends on your choice:
+   - **Just press Enter** (checkbox) — sends only Enter. Use this when you've
+     already typed the whole prompt into Claude and it just needs to start.
+   - **Send text** (multi-line box) — the text is appended to the **end** of
+     whatever is already in Claude's composer (caret jumps to the end first),
+     then Enter submits. Multi-line text uses Shift+Enter for internal line
+     breaks so it isn't submitted early. Leave the box empty to just press
+     Enter. Default text is `resume`.
 
 You can also type the reset time in manually (e.g. `3pm`) and Arm without OCR,
-or hit **Resume now (test)** to verify the typing works against your Claude
-window before relying on it.
+or hit **Send now (test)** to verify it works against your Claude window before
+relying on it.
 
 ### Notes & limitations
 

@@ -42,6 +42,73 @@ jobs:
           Write-Host "Version = $v"
           "version=$v" >> $env:GITHUB_OUTPUT
 
+      # Draw the app icon (clay sunburst + engineer's gear) into app.ico so the
+      # published exe carries a file icon. Best-effort: never fail the build over it.
+      - name: Generate app icon
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $size = 256
+          $bmp = New-Object System.Drawing.Bitmap($size, $size)
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+          $clay = [System.Drawing.ColorTranslator]::FromHtml("#CC785C")
+          $dark = [System.Drawing.ColorTranslator]::FromHtml("#1F2430")
+          $white = [System.Drawing.Color]::White
+
+          # Rounded clay background
+          $r = 56
+          $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+          $path.AddArc(0, 0, $r, $r, 180, 90)
+          $path.AddArc($size - $r, 0, $r, $r, 270, 90)
+          $path.AddArc($size - $r, $size - $r, $r, $r, 0, 90)
+          $path.AddArc(0, $size - $r, $r, $r, 90, 90)
+          $path.CloseFigure()
+          $g.FillPath((New-Object System.Drawing.SolidBrush $clay), $path)
+
+          # Sunburst
+          $cx = 128; $cy = 128
+          $pen = New-Object System.Drawing.Pen $white, ([single]14)
+          $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+          $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+          for ($a = 0; $a -lt 360; $a += 30) {
+            $rad = $a * [Math]::PI / 180
+            $x1 = [single]($cx + 34 * [Math]::Sin($rad)); $y1 = [single]($cy - 34 * [Math]::Cos($rad))
+            $x2 = [single]($cx + 92 * [Math]::Sin($rad)); $y2 = [single]($cy - 92 * [Math]::Cos($rad))
+            $g.DrawLine($pen, $x1, $y1, $x2, $y2)
+          }
+          $g.FillEllipse((New-Object System.Drawing.SolidBrush $white), 108, 108, 40, 40)
+
+          # Engineer's gear
+          $gx = 190; $gy = 190; $gr = 34
+          $penGear = New-Object System.Drawing.Pen $dark, ([single]16)
+          for ($a = 0; $a -lt 360; $a += 45) {
+            $rad = $a * [Math]::PI / 180
+            $x1 = [single]($gx + ($gr - 4) * [Math]::Sin($rad)); $y1 = [single]($gy - ($gr - 4) * [Math]::Cos($rad))
+            $x2 = [single]($gx + ($gr + 10) * [Math]::Sin($rad)); $y2 = [single]($gy - ($gr + 10) * [Math]::Cos($rad))
+            $g.DrawLine($penGear, $x1, $y1, $x2, $y2)
+          }
+          $g.FillEllipse((New-Object System.Drawing.SolidBrush $dark), ($gx - $gr), ($gy - $gr), (2 * $gr), (2 * $gr))
+          $g.FillEllipse((New-Object System.Drawing.SolidBrush $clay), ($gx - 14), ($gy - 14), 28, 28)
+          $g.Dispose()
+
+          # Encode as PNG, then wrap in a single-image (256px) .ico
+          $ms = New-Object System.IO.MemoryStream
+          $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+          $png = $ms.ToArray(); $ms.Dispose(); $bmp.Dispose()
+
+          $out = New-Object System.IO.MemoryStream
+          $bw = New-Object System.IO.BinaryWriter($out)
+          $bw.Write([UInt16]0); $bw.Write([UInt16]1); $bw.Write([UInt16]1)
+          $bw.Write([Byte]0); $bw.Write([Byte]0); $bw.Write([Byte]0); $bw.Write([Byte]0)
+          $bw.Write([UInt16]1); $bw.Write([UInt16]32)
+          $bw.Write([UInt32]$png.Length); $bw.Write([UInt32]22)
+          $bw.Write($png); $bw.Flush()
+          [System.IO.File]::WriteAllBytes("src/ClaudeSupervisor/app.ico", $out.ToArray())
+          $out.Dispose()
+          Write-Host "app.ico written ($($png.Length) bytes)"
+
       - name: Restore
         run: dotnet restore $env:PROJECT -r $env:RUNTIME
 
@@ -56,6 +123,29 @@ jobs:
           -p:Version=${{ steps.version.outputs.version }}
           -o publish
 
+      # Self-sign the exe with a throwaway certificate and export its public .cer.
+      # This does NOT bypass SmartScreen, but lets you trust the app on your own
+      # machine (import the .cer into Trusted Root + Trusted Publishers).
+      - name: Self-sign the executable
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert `
+            -Subject "CN=Claude Supervisor (Self-Signed)" `
+            -CertStoreLocation Cert:\CurrentUser\My -HashAlgorithm SHA256 `
+            -NotAfter (Get-Date).AddYears(5)
+          $sig = Set-AuthenticodeSignature -FilePath publish\ClaudeSupervisor.exe `
+            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
+          Write-Host "Signature status: $($sig.Status)"
+          Export-Certificate -Cert $cert -FilePath publish\ClaudeSupervisor-PublicCert.cer | Out-Null
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash publish\ClaudeSupervisor.exe -Algorithm SHA256).Hash
+          "$h  ClaudeSupervisor.exe" | Out-File -Encoding ascii publish\ClaudeSupervisor.exe.sha256
+          Write-Host "SHA256: $h"
+
       - name: List published output
         shell: pwsh
         run: Get-ChildItem publish | Select-Object Name, Length
@@ -64,11 +154,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ClaudeSupervisor-${{ steps.version.outputs.version }}-win-x64
-          path: publish/ClaudeSupervisor.exe
+          path: |
+            publish/ClaudeSupervisor.exe
+            publish/ClaudeSupervisor-PublicCert.cer
+            publish/ClaudeSupervisor.exe.sha256
           if-no-files-found: error
 
-      # Create a GitHub Release on every push to main (and on version tags),
-      # attaching the standalone ClaudeSupervisor.exe.
+      # Create a GitHub Release on every push to main (and on version tags).
       - name: Create / update Release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
@@ -78,10 +170,20 @@ jobs:
           body: |
             Automated release of Claude Supervisor.
 
-            **ClaudeSupervisor.exe** is a self-contained Windows x64 executable —
-            no .NET runtime or Visual Studio required on the target machine.
-            Download, run, done.
-          files: publish/ClaudeSupervisor.exe
+            **ClaudeSupervisor.exe** — self-contained Windows x64 executable, no .NET
+            runtime or Visual Studio required. Download, run, done.
+
+            The exe is **self-signed**. This does not remove the SmartScreen prompt on a
+            fresh download (click *More info → Run anyway*, or right-click the exe →
+            Properties → Unblock). To trust it permanently on your own PC, import
+            `ClaudeSupervisor-PublicCert.cer` into *Trusted Root Certification
+            Authorities* and *Trusted Publishers*.
+
+            Verify the download with `ClaudeSupervisor.exe.sha256`.
+          files: |
+            publish/ClaudeSupervisor.exe
+            publish/ClaudeSupervisor-PublicCert.cer
+            publish/ClaudeSupervisor.exe.sha256
           draft: false
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
         env:

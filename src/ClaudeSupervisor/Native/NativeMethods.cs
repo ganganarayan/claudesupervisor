@@ -128,6 +128,7 @@ internal static class NativeMethods
     public const ushort VK_SHIFT = 0x10;
     public const ushort VK_CONTROL = 0x11;
     public const ushort VK_END = 0x23;
+    public const ushort VK_V = 0x56;
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);

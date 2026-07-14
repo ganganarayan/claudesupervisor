@@ -26,6 +26,52 @@ public sealed class ClaudeWindow
         Pid = pid;
     }
 
+    /// <summary>Human-readable label for the window picker.</summary>
+    public string Display => $"{Title}   —   {ProcessName} (PID {Pid})";
+
+    /// <summary>
+    /// Lists every visible, titled top-level window (excluding this app) so the user can
+    /// pick a second target such as the terminal running Claude Code.
+    /// </summary>
+    public static IReadOnlyList<ClaudeWindow> EnumerateAll()
+    {
+        int self = Environment.ProcessId;
+        var list = new List<ClaudeWindow>();
+
+        EnumWindows((hWnd, _) =>
+        {
+            if (!IsWindowVisible(hWnd))
+                return true;
+
+            int len = GetWindowTextLength(hWnd);
+            if (len == 0)
+                return true;
+
+            var sb = new StringBuilder(len + 1);
+            GetWindowText(hWnd, sb, sb.Capacity);
+
+            GetWindowThreadProcessId(hWnd, out uint pid);
+            if (pid == self)
+                return true;
+
+            string procName;
+            try
+            {
+                using var p = Process.GetProcessById((int)pid);
+                procName = p.ProcessName;
+            }
+            catch
+            {
+                return true;
+            }
+
+            list.Add(new ClaudeWindow(hWnd, sb.ToString(), procName, (int)pid));
+            return true;
+        }, IntPtr.Zero);
+
+        return list.OrderBy(w => w.ProcessName).ThenBy(w => w.Title).ToList();
+    }
+
     /// <summary>
     /// Finds the Claude desktop window. Prefers a visible top-level window owned by a
     /// process named "Claude" (the desktop app); falls back to any visible window whose
@@ -145,21 +191,23 @@ public sealed class ClaudeWindow
         }
     }
 
+    /// <summary>Focuses the composer and pastes the current clipboard contents (Ctrl+V).</summary>
+    public void Paste()
+    {
+        SendChord(VK_CONTROL, VK_V);
+    }
+
     /// <summary>
-    /// Focuses the Claude window and submits.
+    /// Types the prompt (if any) and submits with Enter. Assumes the window is already focused.
     /// <para>
-    /// If <paramref name="enterOnly"/> is true (or <paramref name="text"/> is empty), it just
-    /// presses Enter — use this when the prompt is already typed in Claude's composer.
-    /// Otherwise it moves the caret to the end of the composer, appends <paramref name="text"/>
-    /// (multi-line text uses Shift+Enter for line breaks so it isn't submitted early), then
-    /// presses Enter to send.
+    /// If <paramref name="enterOnly"/> is true or <paramref name="text"/> is empty, it just presses
+    /// Enter — use this when the prompt is already typed in Claude's composer. Otherwise it moves the
+    /// caret to the end of the composer, appends <paramref name="text"/> (multi-line text uses
+    /// Shift+Enter for line breaks so it isn't submitted early), then presses Enter.
     /// </para>
     /// </summary>
-    public void Resume(string? text, bool enterOnly)
+    public void Submit(string? text, bool enterOnly)
     {
-        ForceForeground();
-        Thread.Sleep(400); // let focus settle on the composer
-
         bool typeText = !enterOnly && !string.IsNullOrEmpty(text);
         if (typeText)
         {

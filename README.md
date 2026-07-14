@@ -41,18 +41,38 @@ You can also type the reset time in manually (e.g. `3pm`) and Arm without OCR,
 or hit **Send now (test)** to verify it works against your Claude window before
 relying on it.
 
-### Notes & limitations
+### Attachments, images & a second target
 
-- **Manual arm, Claude desktop app only.** It targets the desktop app (not
-  Claude Code in a terminal) and is armed by you when you hit the limit — it
-  does not poll continuously.
-- Keep the Claude window open. At resume time the app briefly steals focus to
-  type; don't type elsewhere during that second.
-- Typing goes to whatever field has focus in the Claude window — normally the
-  message composer. If Claude's layout leaves something else focused, click the
-  composer once before the scheduled time.
-- OCR needs an English (or other) language pack installed in Windows (present by
-  default on English installs).
+- **Attachments / images** — add files in the app; at send time each is placed
+  on the clipboard and **pasted (Ctrl+V)** into Claude before the prompt. Image
+  files paste as images; other files paste as a file. *Image paste is reliable;
+  file-attach-by-paste depends on Claude's composer accepting it — verify with
+  **Send now (test)** before relying on it.*
+- **Second target (e.g. Claude Code)** — tick *Also send to 2nd window*, click
+  *Pick window…*, and choose the terminal running Claude Code. At send time it
+  drives Claude first, then the second window (paste → type → Enter on each).
+
+### Keep-awake & sleep (instead of a locked screen)
+
+- While armed, the app **keeps the PC and display awake** so Claude stays
+  rendered and interactable. Tick **Sleep the PC when done** to suspend the
+  machine after sending. Net effect: walk away, it sends at the reset, PC sleeps.
+- **It cannot run behind a locked screen.** Windows switches to a secure desktop
+  when locked: screen capture of Claude returns blank (Chromium stops drawing),
+  and focus/keystroke injection to the user desktop is blocked. Keep the session
+  unlocked (the keep-awake option prevents it sleeping) rather than locking.
+
+### Other notes & limitations
+
+- **Manual arm.** You arm it when you hit the limit; it does not poll
+  continuously.
+- Typing goes to whatever field has focus in the target window — normally the
+  message composer. If something else is focused, click the composer first.
+- OCR needs a language pack installed in Windows (present by default on English
+  installs).
+- The exe is **self-signed** in CI. That does not bypass SmartScreen, but you can
+  import the published `ClaudeSupervisor-PublicCert.cer` into *Trusted Root* and
+  *Trusted Publishers* to trust it on your own machine.
 
 ---
 

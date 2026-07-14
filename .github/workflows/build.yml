@@ -1,0 +1,88 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required to create GitHub Releases
+
+env:
+  PROJECT: src/ClaudeSupervisor/ClaudeSupervisor.csproj
+  CONFIGURATION: Release
+  RUNTIME: win-x64
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Derive version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $v = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          } else {
+            # e.g. 1.0.<run_number> for main / PR builds
+            $v = "1.0.$env:GITHUB_RUN_NUMBER"
+          }
+          Write-Host "Version = $v"
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore $env:PROJECT -r $env:RUNTIME
+
+      - name: Publish (self-contained single-file win-x64)
+        run: >
+          dotnet publish $env:PROJECT
+          -c $env:CONFIGURATION
+          -r $env:RUNTIME
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ steps.version.outputs.version }}
+          -o publish
+
+      - name: List published output
+        shell: pwsh
+        run: Get-ChildItem publish | Select-Object Name, Length
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeSupervisor-${{ steps.version.outputs.version }}-win-x64
+          path: publish/ClaudeSupervisor.exe
+          if-no-files-found: error
+
+      # Create a GitHub Release on every push to main (and on version tags),
+      # attaching the standalone ClaudeSupervisor.exe.
+      - name: Create / update Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', steps.version.outputs.version) }}
+          name: Claude Supervisor ${{ steps.version.outputs.version }}
+          body: |
+            Automated release of Claude Supervisor.
+
+            **ClaudeSupervisor.exe** is a self-contained Windows x64 executable —
+            no .NET runtime or Visual Studio required on the target machine.
+            Download, run, done.
+          files: publish/ClaudeSupervisor.exe
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

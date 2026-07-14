@@ -1,0 +1,33 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+publish/
+out/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/
+
+# Build / test results
+[Dd]ebug/
+[Rr]elease/
+TestResults/
+*.trx
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# OS cruft
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs
+*.log

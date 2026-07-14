@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ClaudeSupervisor</RootNamespace>
+    <AssemblyName>ClaudeSupervisor</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- Versioning (overridden by CI via -p:Version=...) -->
+    <Version>1.0.0</Version>
+    <Company>Claude Supervisor</Company>
+    <Product>Claude Supervisor</Product>
+    <Description>A lightweight Windows utility to monitor and manage Claude-related processes.</Description>
+
+    <!-- Self-contained single-file publish defaults.
+         These make `dotnet publish -c Release` produce a standalone ClaudeSupervisor.exe. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- WPF is not trim-safe; keep trimming off for a reliable single-file build. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+</Project>

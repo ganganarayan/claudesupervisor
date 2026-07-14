@@ -77,7 +77,8 @@
             <TextBlock Grid.Column="0" Text="Reset time:" VerticalAlignment="Center" Foreground="#1B2430" />
             <TextBox x:Name="ResetTimeBox" Grid.Column="1" Margin="8,0,0,0"
                      Padding="6,4" VerticalContentAlignment="Center"
-                     ToolTip="e.g. 3pm, 3:00 PM, or 15:00. Filled in by 'Read reset time', or type it yourself." />
+                     TextChanged="ResetTimeBox_TextChanged"
+                     ToolTip="IST. e.g. 3pm, 3:00 PM, or 15:00. Filled in by 'Read reset time', or type it yourself." />
             <Button x:Name="ReadButton" Grid.Column="2" Content="Read reset time (OCR)"
                     Click="ReadButton_Click" Margin="10,0,0,0" />
         </Grid>

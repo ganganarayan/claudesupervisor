@@ -12,7 +12,9 @@ namespace ClaudeSupervisor;
 public partial class MainWindow : Window
 {
     private ClaudeWindow? _target;
-    private DateTime _resumeAt;
+    private DateTimeOffset _resumeAt;
+    private DateTimeOffset? _ocrResetAt; // reset time parsed by OCR, if the field is unedited
+    private bool _settingField;          // guards programmatic edits of the reset-time field
     private readonly DispatcherTimer _timer;
 
     public MainWindow()
@@ -70,11 +72,16 @@ public partial class MainWindow : Window
             string preview = text.Length > 300 ? text[..300] + "…" : text;
             Log("OCR text: " + preview.Replace("\r", " ").Replace("\n", " "));
 
-            if (ResetTimeParser.TryExtractFromOcr(text, out DateTime reset, out string display))
+            if (ResetTimeParser.TryExtractFromOcr(text, out DateTimeOffset reset))
             {
-                ResetTimeBox.Text = display;
-                SetStatus($"Found reset time: {display}. Click “Arm / Schedule” to set the auto-resume.");
-                Log($"Parsed reset time → {display} (next at {reset:yyyy-MM-dd HH:mm}).");
+                string full = ResetTimeParser.FormatIst(reset);
+                _settingField = true;
+                ResetTimeBox.Text = ResetTimeParser.FormatClock(reset);
+                _settingField = false;
+                _ocrResetAt = reset;
+
+                SetStatus($"Found reset time: {full}. Click “Arm / Schedule” to set the auto-resume.");
+                Log($"Parsed reset time → {full}.");
             }
             else
             {
@@ -100,9 +107,15 @@ public partial class MainWindow : Window
         if (_target is null && DetectWindow(quiet: false) is null)
             return;
 
-        if (!ResetTimeParser.TryParseField(ResetTimeBox.Text, out DateTime reset, out string display))
+        // Prefer the OCR-parsed time if the field hasn't been edited; otherwise parse the field.
+        DateTimeOffset reset;
+        if (_ocrResetAt.HasValue)
         {
-            SetStatus("Enter a valid reset time first — e.g. 3pm, 3:00 PM, or 15:00.");
+            reset = _ocrResetAt.Value;
+        }
+        else if (!ResetTimeParser.TryParseField(ResetTimeBox.Text, out reset))
+        {
+            SetStatus("Enter a valid reset time first — e.g. 3pm, 3:00 PM, or 15:00 (IST).");
             Log("Invalid reset-time field: " + ResetTimeBox.Text);
             return;
         }
@@ -115,8 +128,8 @@ public partial class MainWindow : Window
         CancelButton.IsEnabled = true;
         ReadButton.IsEnabled = false;
 
-        Log($"Armed. Reset {display}, +{buffer}s buffer → resume at {_resumeAt:yyyy-MM-dd HH:mm:ss}. " +
-            $"Will send: \"{SendTextBox.Text}\".");
+        Log($"Armed. Reset {ResetTimeParser.FormatIst(reset)}, +{buffer}s buffer → resume at " +
+            $"{ResetTimeParser.FormatIst(_resumeAt)}. Will send: \"{SendTextBox.Text}\".");
         UpdateCountdown();
     }
 
@@ -127,9 +140,16 @@ public partial class MainWindow : Window
         Log("Schedule cancelled by user.");
     }
 
+    private void ResetTimeBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        // A manual edit invalidates the OCR-parsed time; Arm will re-parse the field.
+        if (!_settingField)
+            _ocrResetAt = null;
+    }
+
     private void Timer_Tick(object? sender, EventArgs e)
     {
-        if (DateTime.Now >= _resumeAt)
+        if (DateTimeOffset.Now >= _resumeAt)
         {
             StopTimer();
             DoResume(auto: true);
@@ -142,9 +162,10 @@ public partial class MainWindow : Window
 
     private void UpdateCountdown()
     {
-        TimeSpan left = _resumeAt - DateTime.Now;
+        TimeSpan left = _resumeAt - DateTimeOffset.Now;
         if (left < TimeSpan.Zero) left = TimeSpan.Zero;
-        SetStatus($"Armed — resuming at {_resumeAt:HH:mm:ss}  (in {(int)left.TotalHours:00}:{left.Minutes:00}:{left.Seconds:00}).");
+        SetStatus($"Armed — resuming at {ResetTimeParser.FormatIst(_resumeAt)}  " +
+                  $"(in {(int)left.TotalHours:00}:{left.Minutes:00}:{left.Seconds:00}).");
     }
 
     private void StopTimer()

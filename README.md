@@ -15,9 +15,12 @@ runtime and no Visual Studio are required on the target machine.
 1. **Detect** — on launch it finds the Claude desktop window automatically
    (a visible top-level window owned by the `Claude` process).
 2. **Read reset time (OCR)** — click this when you've hit the limit. It captures
-   the Claude window and runs the OCR engine built into Windows 10/11 (no
-   external data files), then parses the reset time (`resets 3pm`,
-   `your limit will reset at 3:00 PM`, `15:00`, …) into the field.
+   the **Claude window only** (via `PrintWindow`, never a screen grab, so this
+   app's own window can't leak into the capture) and runs the OCR engine built
+   into Windows 10/11 (no external data files). It understands both relative
+   durations (`resets in 3 hr 55 min` → now + 3h55m) and absolute clock times
+   (`reset at 3:00 PM`, `Resets Mon 2:29 AM`, `15:00`), and picks the soonest
+   future one. All times are handled and shown in **IST (UTC+5:30)**.
 3. **Arm / Schedule** — schedules a resume at the reset time plus a small buffer
    (default 30 s). A live countdown shows in the status bar.
 4. **Resume** — at the scheduled moment it re-finds the Claude window, brings it

@@ -85,8 +85,9 @@ public sealed class ClaudeWindow
     }
 
     /// <summary>
-    /// Captures the window as a bitmap. Tries PrintWindow first (works even if the window
-    /// is partially covered); falls back to a foreground screen grab if that returns black.
+    /// Captures the Claude window's own pixels via PrintWindow — even when it is
+    /// covered by other windows (like this app). Never grabs the screen, so the
+    /// Supervisor window can never leak into the capture. Throws if the result is blank.
     /// </summary>
     public Bitmap Capture()
     {
@@ -107,21 +108,15 @@ public sealed class ClaudeWindow
             }
         }
 
-        if (!IsMostlyBlack(bmp))
-            return bmp;
-
-        // Fallback: bring the window forward and copy from the screen.
-        bmp.Dispose();
-        ForceForeground();
-        Thread.Sleep(300);
-
-        GetWindowRect(Handle, out rect);
-        var shot = new Bitmap(rect.Width, rect.Height, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(shot))
+        if (IsMostlyBlack(bmp))
         {
-            g.CopyFromScreen(rect.Left, rect.Top, 0, 0, new Size(rect.Width, rect.Height));
+            bmp.Dispose();
+            throw new InvalidOperationException(
+                "Window capture came back blank. Make sure the Claude window is open and " +
+                "not minimized, then try again.");
         }
-        return shot;
+
+        return bmp;
     }
 
     /// <summary>Brings the window to the foreground, restoring it if minimized.</summary>

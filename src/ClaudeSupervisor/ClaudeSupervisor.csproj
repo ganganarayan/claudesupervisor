@@ -2,30 +2,36 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- Windows 10 SDK target so we can use the built-in Windows.Media.Ocr engine. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <RootNamespace>ClaudeSupervisor</RootNamespace>
     <AssemblyName>ClaudeSupervisor</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- Versioning (overridden by CI via -p:Version=...) -->
     <Version>1.0.0</Version>
     <Company>Claude Supervisor</Company>
     <Product>Claude Supervisor</Product>
-    <Description>A lightweight Windows utility to monitor and manage Claude-related processes.</Description>
+    <Description>Watches the Claude desktop app for a usage-limit message, reads the reset time via OCR, and auto-types "resume" when the limit is back.</Description>
 
-    <!-- Self-contained single-file publish defaults.
-         These make `dotnet publish -c Release` produce a standalone ClaudeSupervisor.exe. -->
+    <!-- Self-contained single-file publish defaults. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <!-- WPF is not trim-safe; keep trimming off for a reliable single-file build. -->
     <PublishTrimmed>false</PublishTrimmed>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- GDI screen/window capture. Windows-only, which matches our RID. -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+  </ItemGroup>
 
 </Project>

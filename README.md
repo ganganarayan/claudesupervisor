@@ -1,12 +1,44 @@
 # Claude Supervisor
 
-A lightweight Windows desktop utility (WPF, .NET 8) that lists and manages
-Claude-related processes — `claude`, `node`, and `anthropic` processes by
-default — showing PID, memory, thread count, and start time, with one-click
-refresh, auto-refresh, name filtering, and process termination.
+A lightweight Windows desktop utility (WPF, .NET 8) that **auto-resumes the
+Claude desktop app when your usage limit resets**. When you hit a limit, Claude
+shows a message with the reset time. Claude Supervisor reads that time off the
+screen with OCR, waits until the limit is back, then brings the Claude window
+forward and types your resume text (default `resume`) followed by Enter — so
+your session continues on its own.
 
 It ships as a **single, self-contained `ClaudeSupervisor.exe`**: no .NET
 runtime and no Visual Studio are required on the target machine.
+
+## How it works
+
+1. **Detect** — on launch it finds the Claude desktop window automatically
+   (a visible top-level window owned by the `Claude` process).
+2. **Read reset time (OCR)** — click this when you've hit the limit. It captures
+   the Claude window and runs the OCR engine built into Windows 10/11 (no
+   external data files), then parses the reset time (`resets 3pm`,
+   `your limit will reset at 3:00 PM`, `15:00`, …) into the field.
+3. **Arm / Schedule** — schedules a resume at the reset time plus a small buffer
+   (default 30 s). A live countdown shows in the status bar.
+4. **Resume** — at the scheduled moment it re-finds the Claude window, brings it
+   to the foreground, and types the send text + Enter.
+
+You can also type the reset time in manually (e.g. `3pm`) and Arm without OCR,
+or hit **Resume now (test)** to verify the typing works against your Claude
+window before relying on it.
+
+### Notes & limitations
+
+- **Manual arm, Claude desktop app only.** It targets the desktop app (not
+  Claude Code in a terminal) and is armed by you when you hit the limit — it
+  does not poll continuously.
+- Keep the Claude window open. At resume time the app briefly steals focus to
+  type; don't type elsewhere during that second.
+- Typing goes to whatever field has focus in the Claude window — normally the
+  message composer. If Claude's layout leaves something else focused, click the
+  composer once before the scheduled time.
+- OCR needs an English (or other) language pack installed in Windows (present by
+  default on English installs).
 
 ---
 
@@ -34,10 +66,16 @@ Claude Supervisor/
 │       └── build.yml                 # CI: build, publish, artifact, release
 ├── src/
 │   └── ClaudeSupervisor/
-│       ├── ClaudeSupervisor.csproj    # net8.0-windows, WPF, self-contained
-│       ├── app.manifest               # DPI awareness, supported OS
-│       ├── App.xaml / App.xaml.cs     # application entry + shared styles
-│       └── MainWindow.xaml / .cs      # process list UI + logic
+│       ├── ClaudeSupervisor.csproj     # net8.0-windows10.0.19041.0, WPF, self-contained
+│       ├── app.manifest                # DPI awareness, supported OS
+│       ├── App.xaml / App.xaml.cs      # application entry + shared styles
+│       ├── MainWindow.xaml / .cs       # UI + orchestration
+│       ├── Native/
+│       │   └── NativeMethods.cs        # Win32 P/Invoke (enum, capture, focus, SendInput)
+│       └── Services/
+│           ├── ClaudeWindow.cs         # find window, capture, foreground, type
+│           ├── OcrService.cs           # Windows.Media.Ocr wrapper
+│           └── ResetTimeParser.cs      # parse reset time from OCR / field text
 ├── ClaudeSupervisor.sln
 ├── .gitignore
 └── README.md

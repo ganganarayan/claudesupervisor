@@ -2,13 +2,17 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Claude Supervisor"
-        Height="560" Width="880"
-        MinHeight="380" MinWidth="640"
+        Height="600" Width="720"
+        MinHeight="560" MinWidth="600"
         WindowStartupLocation="CenterScreen"
         Background="#F4F6FA"
         FontFamily="Segoe UI">
-    <Grid Margin="16">
+    <Grid Margin="18">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -16,61 +20,94 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
-            <TextBlock Text="Claude Supervisor"
-                       FontSize="22" FontWeight="SemiBold"
-                       Foreground="#1B2430" VerticalAlignment="Center" />
-            <TextBlock x:Name="VersionText"
-                       Text=""
-                       FontSize="12" Foreground="#7A8598"
-                       VerticalAlignment="Bottom" Margin="10,0,0,4" />
+        <StackPanel Grid.Row="0" Margin="0,0,0,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Claude Supervisor" FontSize="22" FontWeight="SemiBold" Foreground="#1B2430" />
+                <TextBlock x:Name="VersionText" Text="" FontSize="12" Foreground="#7A8598"
+                           VerticalAlignment="Bottom" Margin="10,0,0,4" />
+            </StackPanel>
+            <TextBlock Text="Reads the reset time off a usage-limit message and auto-types “resume” when the limit is back."
+                       FontSize="12.5" Foreground="#5B6676" Margin="0,2,0,0" TextWrapping="Wrap" />
         </StackPanel>
 
-        <!-- Toolbar -->
-        <Grid Grid.Row="1" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                <Button x:Name="RefreshButton" Content="Refresh" Click="RefreshButton_Click" />
-                <Button x:Name="TerminateButton" Content="Terminate Selected"
-                        Click="TerminateButton_Click" Background="#D9534F" />
-                <CheckBox x:Name="AutoRefreshCheck" Content="Auto-refresh (2s)"
-                          VerticalAlignment="Center" Margin="6,0,0,0"
-                          Checked="AutoRefreshCheck_Changed"
-                          Unchecked="AutoRefreshCheck_Changed" />
-            </StackPanel>
-            <TextBox x:Name="FilterBox"
-                     Width="220" HorizontalAlignment="Right"
-                     VerticalContentAlignment="Center" Padding="6,4"
-                     TextChanged="FilterBox_TextChanged"
-                     ToolTip="Filter by process name (default: claude, node, anthropic)" />
-        </Grid>
-
-        <!-- Process grid -->
-        <Border Grid.Row="2" BorderBrush="#DCE1EA" BorderThickness="1" CornerRadius="6"
-                Background="White">
-            <DataGrid x:Name="ProcessGrid"
-                      AutoGenerateColumns="False"
-                      IsReadOnly="True"
-                      HeadersVisibility="Column"
-                      GridLinesVisibility="Horizontal"
-                      HorizontalGridLinesBrush="#EEF1F6"
-                      BorderThickness="0"
-                      Background="White"
-                      RowBackground="White"
-                      AlternatingRowBackground="#FAFBFD"
-                      SelectionMode="Extended">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="70" />
-                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
-                    <DataGridTextColumn Header="Memory (MB)" Binding="{Binding MemoryMb}" Width="110" />
-                    <DataGridTextColumn Header="Threads" Binding="{Binding Threads}" Width="80" />
-                    <DataGridTextColumn Header="Started" Binding="{Binding StartTime}" Width="150" />
-                </DataGrid.Columns>
-            </DataGrid>
+        <!-- Target window -->
+        <Border Grid.Row="1" Background="White" BorderBrush="#DCE1EA" BorderThickness="1"
+                CornerRadius="6" Padding="12,10" Margin="0,14,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Target:" FontWeight="SemiBold" Foreground="#1B2430" VerticalAlignment="Center" />
+                <TextBlock x:Name="TargetText" Grid.Column="1" Text="Not detected" Margin="8,0,0,0"
+                           Foreground="#5B6676" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Button x:Name="DetectButton" Grid.Column="2" Content="Re-detect" Click="DetectButton_Click"
+                        Background="#5B6676" Margin="8,0,0,0" />
+            </Grid>
         </Border>
 
-        <!-- Status bar -->
-        <TextBlock x:Name="StatusText" Grid.Row="3"
-                   Margin="2,10,0,0" FontSize="12" Foreground="#7A8598"
-                   Text="Ready." />
+        <!-- Settings -->
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="140" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="70" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Send text:" VerticalAlignment="Center" Foreground="#1B2430" />
+            <TextBox x:Name="SendTextBox" Grid.Column="1" Text="resume" Margin="8,0,0,0"
+                     Padding="6,4" VerticalContentAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="Buffer (sec):" VerticalAlignment="Center"
+                       Foreground="#1B2430" Margin="16,0,0,0"
+                       ToolTip="Extra seconds to wait after the reset time before resuming." />
+            <TextBox x:Name="BufferBox" Grid.Column="3" Text="30" Margin="8,0,0,0"
+                     Padding="6,4" VerticalContentAlignment="Center" />
+        </Grid>
+
+        <!-- Reset time -->
+        <Grid Grid.Row="3" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="140" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Reset time:" VerticalAlignment="Center" Foreground="#1B2430" />
+            <TextBox x:Name="ResetTimeBox" Grid.Column="1" Margin="8,0,0,0"
+                     Padding="6,4" VerticalContentAlignment="Center"
+                     ToolTip="e.g. 3pm, 3:00 PM, or 15:00. Filled in by 'Read reset time', or type it yourself." />
+            <Button x:Name="ReadButton" Grid.Column="2" Content="Read reset time (OCR)"
+                    Click="ReadButton_Click" Margin="10,0,0,0" />
+        </Grid>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,16,0,0">
+            <Button x:Name="ArmButton" Content="Arm / Schedule" Click="ArmButton_Click"
+                    Background="#2E9E5B" Padding="18,8" FontWeight="SemiBold" />
+            <Button x:Name="CancelButton" Content="Cancel" Click="CancelButton_Click"
+                    Background="#5B6676" Padding="16,8" IsEnabled="False" />
+            <Button x:Name="ResumeNowButton" Content="Resume now (test)" Click="ResumeNowButton_Click"
+                    Background="#2D6CDF" Padding="16,8" />
+        </StackPanel>
+
+        <!-- Big status -->
+        <Border Grid.Row="5" Background="#EAF1FF" BorderBrush="#C9DBFF" BorderThickness="1"
+                CornerRadius="6" Padding="14,12" Margin="0,16,0,0">
+            <TextBlock x:Name="StatusText" Text="Idle. Detect the Claude window, then read or enter the reset time."
+                       FontSize="14" Foreground="#1B3A72" TextWrapping="Wrap" />
+        </Border>
+
+        <!-- Log -->
+        <Border Grid.Row="6" Background="#1B2430" CornerRadius="6" Margin="0,14,0,0">
+            <TextBox x:Name="LogBox" Background="Transparent" Foreground="#D6E2F5"
+                     BorderThickness="0" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
+                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="10"
+                     VerticalContentAlignment="Top" />
+        </Border>
+
+        <TextBlock Grid.Row="7" Margin="2,8,0,0" FontSize="11" Foreground="#9AA4B2"
+                   Text="Keep the Claude window open. During resume the app briefly brings it to the foreground to type." />
     </Grid>
 </Window>

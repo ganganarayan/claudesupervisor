@@ -1,149 +1,196 @@
-using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
+using ClaudeSupervisor.Services;
 
 namespace ClaudeSupervisor;
 
 /// <summary>
-/// Main window: lists Claude-related processes and lets the user refresh,
-/// filter, auto-refresh, and terminate them.
+/// Orchestrates: detect Claude window → read the reset time via OCR → schedule →
+/// auto-type the resume text once the limit is back.
 /// </summary>
 public partial class MainWindow : Window
 {
-    // Process names (case-insensitive, substring match) that count as "Claude related".
-    private static readonly string[] DefaultMatches = { "claude", "node", "anthropic" };
-
-    private readonly ObservableCollection<ProcessRow> _rows = new();
-    private readonly DispatcherTimer _autoRefreshTimer;
+    private ClaudeWindow? _target;
+    private DateTime _resumeAt;
+    private readonly DispatcherTimer _timer;
 
     public MainWindow()
     {
         InitializeComponent();
 
-        ProcessGrid.ItemsSource = _rows;
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _timer.Tick += Timer_Tick;
 
-        _autoRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        _autoRefreshTimer.Tick += (_, _) => Refresh();
+        var v = Assembly.GetExecutingAssembly().GetName().Version;
+        VersionText.Text = v is null ? string.Empty : $"v{v.Major}.{v.Minor}.{v.Build}";
 
-        var version = Assembly.GetExecutingAssembly().GetName().Version;
-        VersionText.Text = version is null ? string.Empty : $"v{version.Major}.{version.Minor}.{version.Build}";
-
-        Loaded += (_, _) => Refresh();
+        Loaded += (_, _) => DetectWindow(quiet: true);
     }
 
-    private void RefreshButton_Click(object sender, RoutedEventArgs e) => Refresh();
+    // ----- Window detection -----
 
-    private void AutoRefreshCheck_Changed(object sender, RoutedEventArgs e)
+    private void DetectButton_Click(object sender, RoutedEventArgs e) => DetectWindow(quiet: false);
+
+    private ClaudeWindow? DetectWindow(bool quiet)
     {
-        if (AutoRefreshCheck.IsChecked == true)
-            _autoRefreshTimer.Start();
+        _target = ClaudeWindow.Find();
+        if (_target is null)
+        {
+            TargetText.Text = "Not detected — open the Claude desktop app.";
+            if (!quiet)
+                Log("Claude window not found. Make sure the Claude desktop app is running and visible.");
+            return null;
+        }
+
+        TargetText.Text = $"“{_target.Title}”  ({_target.ProcessName}, PID {_target.Pid})";
+        if (!quiet)
+            Log($"Detected Claude window: {_target.Title} (PID {_target.Pid}).");
+        return _target;
+    }
+
+    // ----- OCR read -----
+
+    private async void ReadButton_Click(object sender, RoutedEventArgs e)
+    {
+        var target = _target ?? DetectWindow(quiet: false);
+        if (target is null)
+            return;
+
+        ReadButton.IsEnabled = false;
+        SetStatus("Capturing the Claude window and reading text…");
+        try
+        {
+            string text = await Task.Run(async () =>
+            {
+                using var bmp = target.Capture();
+                return await OcrService.RecognizeAsync(bmp);
+            });
+
+            string preview = text.Length > 300 ? text[..300] + "…" : text;
+            Log("OCR text: " + preview.Replace("\r", " ").Replace("\n", " "));
+
+            if (ResetTimeParser.TryExtractFromOcr(text, out DateTime reset, out string display))
+            {
+                ResetTimeBox.Text = display;
+                SetStatus($"Found reset time: {display}. Click “Arm / Schedule” to set the auto-resume.");
+                Log($"Parsed reset time → {display} (next at {reset:yyyy-MM-dd HH:mm}).");
+            }
+            else
+            {
+                SetStatus("Couldn’t find a reset time in the message. Type it into the field (e.g. 3pm), then Arm.");
+                Log("No reset time matched in the OCR text.");
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus("OCR failed: " + ex.Message);
+            Log("ERROR during OCR: " + ex.Message);
+        }
+        finally
+        {
+            ReadButton.IsEnabled = true;
+        }
+    }
+
+    // ----- Arm / schedule -----
+
+    private void ArmButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_target is null && DetectWindow(quiet: false) is null)
+            return;
+
+        if (!ResetTimeParser.TryParseField(ResetTimeBox.Text, out DateTime reset, out string display))
+        {
+            SetStatus("Enter a valid reset time first — e.g. 3pm, 3:00 PM, or 15:00.");
+            Log("Invalid reset-time field: " + ResetTimeBox.Text);
+            return;
+        }
+
+        int buffer = int.TryParse(BufferBox.Text, out int b) && b >= 0 ? b : 30;
+        _resumeAt = reset.AddSeconds(buffer);
+
+        _timer.Start();
+        ArmButton.IsEnabled = false;
+        CancelButton.IsEnabled = true;
+        ReadButton.IsEnabled = false;
+
+        Log($"Armed. Reset {display}, +{buffer}s buffer → resume at {_resumeAt:yyyy-MM-dd HH:mm:ss}. " +
+            $"Will send: \"{SendTextBox.Text}\".");
+        UpdateCountdown();
+    }
+
+    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        StopTimer();
+        SetStatus("Cancelled. Not armed.");
+        Log("Schedule cancelled by user.");
+    }
+
+    private void Timer_Tick(object? sender, EventArgs e)
+    {
+        if (DateTime.Now >= _resumeAt)
+        {
+            StopTimer();
+            DoResume(auto: true);
+        }
         else
-            _autoRefreshTimer.Stop();
+        {
+            UpdateCountdown();
+        }
     }
 
-    private void FilterBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e) => Refresh();
-
-    private void TerminateButton_Click(object sender, RoutedEventArgs e)
+    private void UpdateCountdown()
     {
-        var selected = ProcessGrid.SelectedItems.Cast<ProcessRow>().ToList();
-        if (selected.Count == 0)
+        TimeSpan left = _resumeAt - DateTime.Now;
+        if (left < TimeSpan.Zero) left = TimeSpan.Zero;
+        SetStatus($"Armed — resuming at {_resumeAt:HH:mm:ss}  (in {(int)left.TotalHours:00}:{left.Minutes:00}:{left.Seconds:00}).");
+    }
+
+    private void StopTimer()
+    {
+        _timer.Stop();
+        ArmButton.IsEnabled = true;
+        CancelButton.IsEnabled = false;
+        ReadButton.IsEnabled = true;
+    }
+
+    // ----- Resume action -----
+
+    private void ResumeNowButton_Click(object sender, RoutedEventArgs e) => DoResume(auto: false);
+
+    private void DoResume(bool auto)
+    {
+        // Re-detect in case the window handle changed while we waited.
+        var target = DetectWindow(quiet: true) ?? _target;
+        if (target is null)
         {
-            StatusText.Text = "No process selected.";
+            SetStatus("Resume failed — Claude window not found.");
+            Log("ERROR: could not find the Claude window at resume time.");
             return;
         }
 
-        var names = string.Join(", ", selected.Select(r => $"{r.Name} ({r.Pid})"));
-        var confirm = MessageBox.Show(
-            $"Terminate {selected.Count} process(es)?\n\n{names}",
-            "Confirm termination",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (confirm != MessageBoxResult.Yes)
-            return;
-
-        int killed = 0, failed = 0;
-        foreach (var row in selected)
+        string text = string.IsNullOrEmpty(SendTextBox.Text) ? "resume" : SendTextBox.Text;
+        try
         {
-            try
-            {
-                using var proc = Process.GetProcessById(row.Pid);
-                proc.Kill(entireProcessTree: true);
-                killed++;
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                Debug.WriteLine($"Failed to kill PID {row.Pid}: {ex.Message}");
-            }
+            target.SendTextAndEnter(text);
+            SetStatus($"{(auto ? "Auto-resumed" : "Sent")} at {DateTime.Now:HH:mm:ss}: typed \"{text}\" + Enter.");
+            Log($"{(auto ? "AUTO" : "MANUAL")} resume: sent \"{text}\" + Enter to {target.Title}.");
         }
-
-        StatusText.Text = $"Terminated {killed} process(es)" + (failed > 0 ? $", {failed} failed (try running as administrator)." : ".");
-        Refresh();
+        catch (Exception ex)
+        {
+            SetStatus("Resume failed: " + ex.Message);
+            Log("ERROR sending resume: " + ex.Message);
+        }
     }
 
-    /// <summary>
-    /// Reloads the process list, applying the current name filter.
-    /// </summary>
-    private void Refresh()
+    // ----- Helpers -----
+
+    private void SetStatus(string text) => StatusText.Text = text;
+
+    private void Log(string line)
     {
-        var filterText = FilterBox.Text?.Trim();
-        var matches = string.IsNullOrWhiteSpace(filterText)
-            ? DefaultMatches
-            : new[] { filterText };
-
-        // Preserve the currently selected PIDs across the refresh.
-        var selectedPids = ProcessGrid.SelectedItems.Cast<ProcessRow>().Select(r => r.Pid).ToHashSet();
-
-        _rows.Clear();
-
-        foreach (var proc in Process.GetProcesses())
-        {
-            try
-            {
-                if (!matches.Any(m => proc.ProcessName.Contains(m, StringComparison.OrdinalIgnoreCase)))
-                    continue;
-
-                DateTime? started = null;
-                try { started = proc.StartTime; } catch { /* access denied on some system procs */ }
-
-                _rows.Add(new ProcessRow
-                {
-                    Pid = proc.Id,
-                    Name = proc.ProcessName,
-                    MemoryMb = Math.Round(proc.WorkingSet64 / 1024d / 1024d, 1),
-                    Threads = proc.Threads.Count,
-                    StartTime = started?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—",
-                });
-            }
-            catch
-            {
-                // Process may have exited between enumeration and inspection; skip it.
-            }
-            finally
-            {
-                proc.Dispose();
-            }
-        }
-
-        // Restore selection.
-        foreach (var row in _rows.Where(r => selectedPids.Contains(r.Pid)))
-            ProcessGrid.SelectedItems.Add(row);
-
-        StatusText.Text = $"{_rows.Count} process(es) found · Last updated {DateTime.Now:HH:mm:ss}";
+        LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}");
+        LogBox.ScrollToEnd();
     }
-}
-
-/// <summary>
-/// A single row displayed in the process grid.
-/// </summary>
-public sealed class ProcessRow
-{
-    public int Pid { get; init; }
-    public string Name { get; init; } = string.Empty;
-    public double MemoryMb { get; init; }
-    public int Threads { get; init; }
-    public string StartTime { get; init; } = string.Empty;
 }

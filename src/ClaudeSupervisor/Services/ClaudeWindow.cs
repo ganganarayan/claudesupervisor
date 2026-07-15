@@ -165,30 +165,28 @@ public sealed class ClaudeWindow
         return bmp;
     }
 
-    /// <summary>Brings the window to the foreground, restoring it if minimized.</summary>
+    /// <summary>
+    /// Brings the window to the foreground, restoring it if minimized.
+    /// <para>
+    /// Deliberately does NOT use <c>AttachThreadInput</c>: attaching our input queue to another
+    /// app's thread can deadlock the whole input system if either side stalls. Instead we drop the
+    /// foreground-lock timeout (so <c>SetForegroundWindow</c> is honored) and fall back to
+    /// <c>SwitchToThisWindow</c>, neither of which can hang.
+    /// </para>
+    /// </summary>
     public void ForceForeground()
     {
         if (IsIconic(Handle))
             ShowWindow(Handle, SW_RESTORE);
-
-        IntPtr foreground = GetForegroundWindow();
-        uint foreThread = GetWindowThreadProcessId(foreground, out _);
-        uint thisThread = GetCurrentThreadId();
-        uint targetThread = GetWindowThreadProcessId(Handle, out _);
-
-        AttachThreadInput(thisThread, foreThread, true);
-        AttachThreadInput(thisThread, targetThread, true);
-        try
-        {
-            BringWindowToTop(Handle);
+        else
             ShowWindow(Handle, SW_SHOW);
-            SetForegroundWindow(Handle);
-        }
-        finally
-        {
-            AttachThreadInput(thisThread, targetThread, false);
-            AttachThreadInput(thisThread, foreThread, false);
-        }
+
+        // Allow foreground changes from our (possibly background) thread.
+        SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, IntPtr.Zero, 0);
+
+        BringWindowToTop(Handle);
+        if (!SetForegroundWindow(Handle))
+            SwitchToThisWindow(Handle, true); // best-effort, non-blocking fallback
     }
 
     /// <summary>Focuses the composer and pastes the current clipboard contents (Ctrl+V).</summary>

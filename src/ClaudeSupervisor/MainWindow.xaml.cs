@@ -245,67 +245,88 @@ public partial class MainWindow : Window
 
     private void DoSend(bool auto)
     {
+        // Gather everything on the UI thread, then run the send off-thread so a slow focus
+        // or paste can never freeze the UI (or the input system).
+        var primary = DetectWindow(quiet: true) ?? _target;
+        if (primary is null)
+        {
+            SetStatus("Send failed — Claude window not found.");
+            Log("ERROR: could not find the Claude window at send time.");
+            SystemPower.AllowSleep();
+            return;
+        }
+
         bool enterOnly = EnterOnlyCheck.IsChecked == true;
         string text = SendTextBox.Text ?? string.Empty;
+        var attachments = _attachments.ToList();
+        ClaudeWindow? second = SecondTargetCheck.IsChecked == true ? _secondTarget : null;
+        bool sleepWhenDone = SleepWhenDoneCheck.IsChecked == true;
 
-        try
+        SetBusy(true);
+        SetStatus("Sending…");
+        Log(auto ? "Reset time reached — sending on a background thread." : "Manual send (test).");
+
+        var thread = new Thread(() =>
         {
-            // Target 1: the Claude desktop app (re-detect in case its handle changed).
-            var primary = DetectWindow(quiet: true) ?? _target;
-            if (primary is null)
+            try
             {
-                SetStatus("Send failed — Claude window not found.");
-                Log("ERROR: could not find the Claude window at send time.");
-                return;
-            }
-            SendTo(primary, "Claude", text, enterOnly);
+                SendTo(primary, "Claude", text, enterOnly, attachments);
 
-            // Target 2: the picked window (e.g. Claude Code), if enabled.
-            if (SecondTargetCheck.IsChecked == true && _secondTarget is not null)
+                if (second is not null)
+                {
+                    Thread.Sleep(700);
+                    SendTo(second, second.ProcessName, text, enterOnly, attachments);
+                }
+
+                SetStatus($"{(auto ? "Auto-sent" : "Sent")} at {DateTime.Now:HH:mm:ss}.");
+            }
+            catch (Exception ex)
             {
-                Thread.Sleep(700);
-                SendTo(_secondTarget, _secondTarget.ProcessName, text, enterOnly);
+                SetStatus("Send failed: " + ex.Message);
+                Log("ERROR sending: " + ex.Message);
+            }
+            finally
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    SystemPower.AllowSleep(); // clears the keep-awake held by the UI thread
+                    SetBusy(false);
+                });
             }
 
-            SetStatus($"{(auto ? "Auto-sent" : "Sent")} at {DateTime.Now:HH:mm:ss}.");
-        }
-        catch (Exception ex)
+            if (sleepWhenDone)
+            {
+                Log("Sleeping the PC…");
+                Thread.Sleep(1200); // let the log flush before suspending
+                SystemPower.Sleep();
+            }
+        })
         {
-            SetStatus("Send failed: " + ex.Message);
-            Log("ERROR sending: " + ex.Message);
-        }
-        finally
-        {
-            SystemPower.AllowSleep();
-        }
-
-        if (SleepWhenDoneCheck.IsChecked == true)
-        {
-            Log("Sleeping the PC…");
-            // Give the UI a moment to flush the log before suspending.
-            Dispatcher.BeginInvoke(new Action(() => SystemPower.Sleep()), DispatcherPriority.ApplicationIdle);
-        }
+            IsBackground = true,
+            Name = "ClaudeSupervisor.Send",
+        };
+        thread.SetApartmentState(ApartmentState.STA); // required for clipboard access
+        thread.Start();
     }
 
-    private void SendTo(ClaudeWindow window, string label, string text, bool enterOnly)
+    private void SendTo(ClaudeWindow window, string label, string text, bool enterOnly, List<string> attachments)
     {
         window.ForceForeground();
         Thread.Sleep(500);
 
-        PasteAttachments(window);
+        PasteAttachments(window, attachments);
 
         window.Submit(text, enterOnly);
 
         bool typed = !enterOnly && text.Length > 0;
         string what = typed ? $"appended \"{Preview(text)}\" + Enter" : "pressed Enter only";
-        int n = _attachments.Count;
-        Log($"Sent to {label} ({window.Title}): {what}" + (n > 0 ? $"; {n} attachment(s)." : "."));
+        Log($"Sent to {label} ({window.Title}): {what}" + (attachments.Count > 0 ? $"; {attachments.Count} attachment(s)." : "."));
     }
 
     /// <summary>Puts each attachment on the clipboard and pastes it into the focused composer.</summary>
-    private void PasteAttachments(ClaudeWindow window)
+    private void PasteAttachments(ClaudeWindow window, List<string> attachments)
     {
-        foreach (string path in _attachments)
+        foreach (string path in attachments)
         {
             try
             {
@@ -322,6 +343,7 @@ public partial class MainWindow : Window
                     img.CacheOption = BitmapCacheOption.OnLoad;
                     img.UriSource = new Uri(path);
                     img.EndInit();
+                    img.Freeze();
                     Clipboard.SetImage(img);
                 }
                 else
@@ -352,10 +374,34 @@ public partial class MainWindow : Window
 
     // ----- Helpers -----
 
-    private void SetStatus(string text) => StatusText.Text = text;
+    /// <summary>Disables the action controls while a send is running on the background thread.</summary>
+    private void SetBusy(bool busy)
+    {
+        ResumeNowButton.IsEnabled = !busy;
+        ReadButton.IsEnabled = !busy;
+        DetectButton.IsEnabled = !busy;
+        AddFilesButton.IsEnabled = !busy;
+        ArmButton.IsEnabled = !busy;
+        CancelButton.IsEnabled = false;
+    }
+
+    private void SetStatus(string text)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => SetStatus(text));
+            return;
+        }
+        StatusText.Text = text;
+    }
 
     private void Log(string line)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => Log(line));
+            return;
+        }
         LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}");
         LogBox.ScrollToEnd();
     }

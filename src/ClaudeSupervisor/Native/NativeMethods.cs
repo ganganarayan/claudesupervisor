@@ -53,6 +53,15 @@ internal static class NativeMethods
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
 
+    // Undocumented but widely used and safe (no input-queue attachment / no deadlock).
+    [DllImport("user32.dll")]
+    public static extern void SwitchToThisWindow(IntPtr hWnd, bool fUnknown);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
+
+    public const uint SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001;
+
     public const int SW_RESTORE = 9;
     public const int SW_SHOW = 5;
 

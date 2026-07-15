@@ -43,11 +43,9 @@ relying on it.
 
 ### Attachments, images & a second target
 
-- **Attachments / images** — add files in the app; at send time each is placed
-  on the clipboard and **pasted (Ctrl+V)** into Claude before the prompt. Image
-  files paste as images; other files paste as a file. *Image paste is reliable;
-  file-attach-by-paste depends on Claude's composer accepting it — verify with
-  **Send now (test)** before relying on it.*
+- **Image attachments** — add image files (PNG, JPG, GIF, BMP) in the app; at
+  send time each is placed on the clipboard and **pasted (Ctrl+V)** into Claude
+  before the prompt. (Non-image file attachment is not currently supported.)
 - **Second target (e.g. Claude Code)** — tick *Also send to 2nd window*, click
   *Pick window…*, and choose the terminal running Claude Code. At send time it
   drives Claude first, then the second window (paste → type → Enter on each).

@@ -87,7 +87,12 @@ public partial class MainWindow : Window
 
     private void AddFilesButton_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new OpenFileDialog { Multiselect = true, Title = "Add attachments" };
+        var dlg = new OpenFileDialog
+        {
+            Multiselect = true,
+            Title = "Add images",
+            Filter = "Images|*.png;*.jpg;*.jpeg;*.gif;*.bmp",
+        };
         if (dlg.ShowDialog(this) == true)
         {
             foreach (string f in dlg.FileNames)
@@ -336,21 +341,19 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                if (IsImage(path))
+                if (!IsImage(path))
                 {
-                    var img = new BitmapImage();
-                    img.BeginInit();
-                    img.CacheOption = BitmapCacheOption.OnLoad;
-                    img.UriSource = new Uri(path);
-                    img.EndInit();
-                    img.Freeze();
-                    Clipboard.SetImage(img);
+                    Log($"Skipped non-image attachment: {Path.GetFileName(path)}");
+                    continue;
                 }
-                else
-                {
-                    var files = new System.Collections.Specialized.StringCollection { path };
-                    Clipboard.SetFileDropList(files);
-                }
+
+                var img = new BitmapImage();
+                img.BeginInit();
+                img.CacheOption = BitmapCacheOption.OnLoad;
+                img.UriSource = new Uri(path);
+                img.EndInit();
+                img.Freeze();
+                Clipboard.SetImage(img);
 
                 Thread.Sleep(200);   // let the clipboard settle
                 window.Paste();
